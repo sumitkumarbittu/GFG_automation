@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { positions, filterCatalog, journalMatchesProblem, journalAppearsClean } = require('../src/shared/core.js');
 const { validateConfig, DEFAULTS } = require('../src/shared/validation.js');
+const { parseProblemUrls } = require('../src/shared/core.js');
 
 test('last completed is exclusive and end is inclusive', () => assert.deepEqual(positions(100, 150), Array.from({ length: 50 }, (_, i) => i + 101)));
 test('CPS range validation accepts bounds and rejects inversions', () => {
@@ -11,6 +12,16 @@ test('CPS range validation accepts bounds and rejects inversions', () => {
 test('pointer interval and accuracy validation', () => {
   assert.throws(() => validateConfig({ ...DEFAULTS, endPosition: 2, pointerIntervalMs: 249 }), /Pointer interval/);
   assert.throws(() => validateConfig({ ...DEFAULTS, endPosition: 2, pointerAccuracy: 101 }), /Pointer accuracy/);
+});
+test('URL queues normalize and deduplicate exact GFG problem slugs', () => {
+  const rows = parseProblemUrls('https://www.geeksforgeeks.org/problems/factorial5739/1\nhttps://practice.geeksforgeeks.org/problems/factorial5739/1 https://www.geeksforgeeks.org/problems/lcm-and-gcd4516/1');
+  assert.deepEqual(rows.map(row => row.slug), ['factorial5739', 'lcm-and-gcd4516']);
+  assert.throws(() => parseProblemUrls('https://leetcode.com/problems/two-sum'), /Not a GeeksforGeeks/);
+});
+test('stochastic interval, chunk, pause, and recovery settings validate', () => {
+  const value = validateConfig({ ...DEFAULTS, minCps: 1, maxCps: 50, minResampleMs: 100, maxResampleMs: 1500, minChunkSize: 1, maxChunkSize: 32, pauseProbability: .2, minPauseMs: 10, maxPauseMs: 500, minPointerIntervalMs: 250, maxPointerIntervalMs: 3000, maxRetries: 7 });
+  assert.equal(value.maxCps, 50); assert.equal(value.maxRetries, 7);
+  assert.throws(() => validateConfig({ ...DEFAULTS, minChunkSize: 20, maxChunkSize: 4 }), /Chunk sizes/);
 });
 test('premium and unavailable filtering preserves catalog positions', () => {
   const catalog = [{ id:'a' }, { id:'b', premium:true }, { id:'c', available:false }, { id:'d' }];

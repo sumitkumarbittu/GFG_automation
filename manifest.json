@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "GeeksforGeeks Traversal Lab",
-  "version": "1.1.0",
+  "version": "1.2.2",
   "description": "User-controlled labeled synthetic editor simulation for development and ML testing.",
   "minimum_chrome_version": "114",
   "permissions": ["alarms", "sidePanel", "storage", "tabs"],
@@ -31,6 +31,7 @@
       "src/content/editor-bridge.js",
       "src/content/typing-scheduler.js",
       "src/content/pointer-simulator.js",
+      "src/content/runtime-aids.js",
       "src/content/gfg-adapter.js"
     ],
     "run_at": "document_idle"

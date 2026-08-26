@@ -21,14 +21,19 @@
     };
   }
   function aceAdapter() {
-    if (!window.ace?.edit) return null;
     const element = [...document.querySelectorAll('.ace_editor')].find(visible); if (!element) return null;
-    let editor; try { editor = window.ace.edit(element); } catch { return null; }
-    const doc = editor.session.getDocument();
+    let editor = element.env?.editor || element.editor || element.__aceEditor || null;
+    if (!editor && window.ace?.edit) try { editor = window.ace.edit(element); } catch {}
+    if (!editor) {
+      const candidates = [window.editor, window.codeEditor, window.aceEditor, window._aceEditor];
+      editor = candidates.find(candidate => candidate?.session?.getDocument && candidate?.getValue) || null;
+    }
+    if (!editor?.session?.getDocument || !editor?.getValue) return null;
+    const doc = editor.session.getDocument(), rangeConstructor = editor.selection?.getRange?.()?.constructor;
     return {
       type: 'ace', source: () => editor.getValue(), language: () => editor.session.$modeId?.split('/').at(-1) || '',
       insert(offset, text) { doc.insert(doc.indexToPosition(offset), text); },
-      remove(start, end) { const Range = window.ace.require('ace/range').Range, a = doc.indexToPosition(start), b = doc.indexToPosition(end); doc.remove(new Range(a.row, a.column, b.row, b.column)); },
+      remove(start, end) { const a = doc.indexToPosition(start), b = doc.indexToPosition(end), Range = window.ace?.require?.('ace/range')?.Range || rangeConstructor; if (!Range) throw new Error('Ace range API unavailable'); doc.remove(new Range(a.row, a.column, b.row, b.column)); },
       caret(offset) { const p = doc.indexToPosition(offset); editor.selection.moveTo(p.row, p.column); editor.clearSelection(); editor.scrollToLine(p.row, true, true); editor.focus(); },
       rect: () => element.getBoundingClientRect()
     };

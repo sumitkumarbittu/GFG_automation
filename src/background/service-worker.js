@@ -21,6 +21,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       case 'GET_TELEMETRY': return controller.telemetry();
       case 'PAGE_READY': await controller.pageReady(sender.tab?.id, message.page); return { ok: true };
       case 'CONTENT_RUNNING': await controller.contentRunning(message.details); return { ok: true };
+      case 'CONTENT_PHASE': await controller.contentPhase(message.phase); return { ok: true };
       case 'CONTENT_ERROR': await controller.fail(message.reason, true); return { ok: true };
       case 'CLEANUP_DONE': await controller.cleanupDone(message.result); return { ok: true };
       case 'TARGET_CPS': controller.run.currentTargetCps = message.cps; await controller.save(); await controller.broadcast(); return { ok: true };

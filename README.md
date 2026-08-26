@@ -2,7 +2,7 @@
 
 GeeksforGeeks Traversal Lab is a Chrome Manifest V3 side-panel extension for user-controlled, labeled synthetic editor simulation. It traverses an ordered range from the public GeeksforGeeks practice catalog, inserts a non-solution local code sequence inside the detected solution function, holds the page for the configured dwell time, removes only its generated range, verifies the cleanup, and then navigates.
 
-Version 1.1 reconnects to live page sessions after normal Manifest V3 service-worker suspension instead of reloading the current question. Side-panel settings persist across panel closure, and each question receives two or three distinct collision-safe traversal phases. Cleanup also recognizes and removes exact structural remnants created by older Traversal Lab generators before allowing navigation.
+Version 1.2 freezes exact problem slugs into a run queue, continuously produces diverse collision-safe code blocks for the entire dwell period, supports exact URL queues, automatically retries recoverable failures, and can skip after a configured retry limit. It adds independently sampled typing and pointer controls, editor-focus mode, and the Screen Wake Lock API. Every random stream can be reproduced with a replay seed and remains labeled synthetic.
 
 It never clicks or invokes Run, Compile, Test, or Submit. It does not solve the active problem and does not bypass login, CAPTCHA, verification, premium access, rate limits, or other restrictions.
 
@@ -24,11 +24,11 @@ If upgrading from version 1.0 while a duplicate block is visible, reload the ext
 
 ## Operation
 
-1. Enter **Last completed position** and **End position**. The first is exclusive and the second is inclusive. A range of 100 to 150 processes resolved catalog positions 101 through 150.
+1. Choose **Explore snapshot** or **Exact URL list**. Explore positions are resolved once at Start and their exact slugs are frozen for the run. The first position is exclusive and the end is inclusive. URL-list positions are local queue positions, not permanent GFG IDs.
 2. Configure dwell time, speed behavior, optional pointer overlay, and fallback language.
 3. Choose **Page editor language** to make the extension select C++, Java, Python, or JavaScript on the actual GFG editor before typing. Choose **Keep current** for detection-only behavior. The fallback applies when a supported editor does not expose a language identifier.
 4. If editor interaction is enabled, check the explicit confirmation box. A run cannot start without it.
-5. Click **Start**. The extension resolves and caches enough of the ordered public `/explore` catalog to cover the requested end position.
+5. Click **Start**. The extension stores a fingerprinted slug queue and continuously generates blocks until each dwell deadline. Code families include primitive types, arrays, vectors, maps, sets, queues, stacks, nested loops, while loops, searches, and local transformations.
 6. Use **Pause**, **Resume**, **Retry current**, **Skip current**, **Remove generated block**, or **Stop** as needed.
 7. Click **Export labeled telemetry** to download completed records as JSONL. Every record has `label: "synthetic"`.
 
@@ -42,7 +42,9 @@ The editor planner masks comments and strings before brace-aware detection in C+
 
 Generated snippets contain only local, language-correct scaffolding unrelated to the problem statement. Natural identifiers are collision checked against the existing source. The extension adds no visible tracking comments. It tracks generated text, source context, insertion position, recovery anchors, and timestamps in `chrome.storage.local`.
 
-The visual pointer cannot move the operating-system pointer. It stays clamped inside the visible editor rectangle and emits `mousemove` and `pointermove` DOM events. Those events are synthetic, so `event.isTrusted === false`.
+The visual pointer cannot move the operating-system pointer. It can target either the editor or the website viewport and emits `mousemove` and `pointermove` DOM events. Destinations and intervals use independent seedable samples. Those events are synthetic, so `event.isTrusted === false`.
+
+Editor-focus mode leaves GFG's native header, profile controls, editor toolbar, and editor DOM in place. It reversibly collapses the overlapping problem pane and expands the existing editor through the available page area. It does not add a replacement editor or fabricated website header. Display-awake mode requests a screen wake lock, reacquires it after visibility changes, and reports when the browser or operating system refuses it.
 
 ## Cleanup and recovery
 
@@ -55,7 +57,7 @@ Before every navigation, the extension:
 5. Reads the editor again and compares it with the exact expected post-cleanup source.
 6. Clears the recovery journal, stores telemetry, and only then permits navigation.
 
-If the generated range was edited, cleanup stops and the run pauses. **Remove generated block** then offers an explicit forced cleanup prompt. Forced cleanup uses the stored before/after recovery anchors and refuses to act if they do not identify one range confidently. Inspect the editor after any forced cleanup. If an older journal belongs to a different problem, **Repair recovery mismatch** quarantines it and retries the current position instead of leaving the run deadlocked.
+Recoverable content failures trigger verified cleanup and retry without requiring a panel click. After the configured limit, the controller can clean and skip automatically. Hard blockers such as CAPTCHA, authentication, a closed tab, or an ambiguous recovery journal still pause because continuing could damage editor content or bypass a site restriction.
 
 On page reload or browser/service-worker restart, the extension reads the journal, matches the problem ID and URL, locates the exact generated content with recovery anchors, removes it, verifies removal, and resumes the current problem. A mismatch pauses the run and preserves the editor. A stopped run also preserves its journal, allowing later recovery.
 

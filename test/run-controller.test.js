@@ -39,3 +39,11 @@ test('extension reload with stale page scripts pauses cleanly instead of breakin
   const controller = new RunController({ chromeApi, resolver: {} }); await controller.init();
   assert.equal(controller.run.state, 'PAUSED'); assert.match(controller.run.recoverableError, /Refresh the GFG tab/);
 });
+test('exact URL mode freezes a deduplicated slug queue without consulting Explore', async () => {
+  const initial = { state: 'IDLE', queue: [{ problem: { url: 'https://www.geeksforgeeks.org/problems/placeholder/1' } }] };
+  const chromeApi = fakeChrome(initial, null); const resolver = { resolve: async () => { throw new Error('Explore must not be called'); } };
+  const controller = new RunController({ chromeApi, resolver }); await controller.init();
+  await controller.start({ ...global.TraversalLab.DEFAULTS, traversalMode: 'urls', urlList: 'https://www.geeksforgeeks.org/problems/factorial5739/1\nhttps://www.geeksforgeeks.org/problems/lcm-and-gcd4516/1', editorConfirmed: true });
+  assert.deepEqual(controller.run.queue.map(item => item.problem.slug), ['factorial5739', 'lcm-and-gcd4516']);
+  assert.equal(controller.run.queueSource, 'user-url-list'); assert.match(controller.run.queueFingerprint, /^[0-9a-f]{8}$/);
+});

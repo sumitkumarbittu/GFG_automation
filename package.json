@@ -1,6 +1,6 @@
 {
   "name": "geeksforgeeks-traversal-lab",
-  "version": "1.1.0",
+  "version": "1.2.2",
   "private": true,
   "type": "commonjs",
   "description": "User-controlled synthetic editor traversal lab for GeeksforGeeks practice pages",

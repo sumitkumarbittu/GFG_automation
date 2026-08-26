@@ -35,6 +35,17 @@
     return wantedPositions.map(position => ({ position, problem: catalog[position - 1] || null }))
       .filter(({ problem }) => problem && (!skipRestricted || (problem.available !== false && problem.premium !== true)));
   }
+  function parseProblemUrls(text) {
+    const seen = new Set(), rows = [];
+    for (const token of String(text || '').split(/[\s,]+/).filter(Boolean)) {
+      let url; try { url = new URL(token); } catch { throw new RangeError(`Invalid URL: ${token}`); }
+      const slug = problemSlug(url.href); if (!slug || !/(^|\.)geeksforgeeks\.org$/i.test(url.hostname)) throw new RangeError(`Not a GeeksforGeeks problem URL: ${token}`);
+      if (seen.has(slug)) continue; seen.add(slug);
+      rows.push({ id: slug, slug, title: slug.replace(/-/g, ' '), url: `https://www.geeksforgeeks.org/problems/${slug}/1`, available: true, premium: false });
+    }
+    if (!rows.length) throw new RangeError('No GeeksforGeeks problem URLs found');
+    return rows;
+  }
   function hashText(text) {
     let h = 2166136261;
     for (let i = 0; i < text.length; i++) { h ^= text.charCodeAt(i); h = Math.imul(h, 16777619); }
@@ -46,5 +57,5 @@
   function problemSlug(url) { return String(url || '').match(/\/problems\/([^/?#]+)/i)?.[1] || ''; }
   function journalMatchesProblem(journal, problem) { return Boolean(journal && problem && (String(journal.problemId) === String(problem.id) || (problemSlug(journal.problemUrl) && problemSlug(journal.problemUrl) === problemSlug(problem.url)))); }
   function journalAppearsClean(source, journal) { const pos = journal?.insertionPosition, before = journal?.contextBefore || '', after = journal?.contextAfter || ''; return Number.isInteger(pos) && source.slice(Math.max(0, pos - before.length), pos) === before && source.slice(pos, pos + after.length) === after; }
-  return { STATES, TERMINAL_STATES, ALLOWED, transition, positions, filterCatalog, hashText, makeRunId, problemSlug, journalMatchesProblem, journalAppearsClean };
+  return { STATES, TERMINAL_STATES, ALLOWED, transition, positions, filterCatalog, parseProblemUrls, hashText, makeRunId, problemSlug, journalMatchesProblem, journalAppearsClean };
 });

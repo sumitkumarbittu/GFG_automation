@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { sampleCps, seededRandom } = require('../src/content/typing-scheduler.js');
+const { sampleCps, seededRandom, TypingScheduler } = require('../src/content/typing-scheduler.js');
 const { pointerTarget } = require('../src/content/pointer-simulator.js');
 
 test('every speed profile stays within configured bounds', () => {
@@ -13,4 +13,8 @@ test('seeded sampling is repeatable', () => {
 test('pointer targets remain clamped inside editor', () => {
   const rect = { left:10, top:20, width:300, height:200, right:310, bottom:220 };
   for (const accuracy of [0,50,100]) for(let i=0;i<100;i++){ const p=pointerTarget(rect,{left:500,top:-100},accuracy); assert.ok(p.x>=10&&p.x<=310&&p.y>=20&&p.y<=220&&p.nx>=0&&p.nx<=1&&p.ny>=0&&p.ny<=1); }
+});
+test('continuous scheduler refills blocks instead of ending after a finite program', () => {
+  const scheduler = new TypingScheduler({ nextText: block => `block-${block}`, write: async () => {}, minCps: 1, maxCps: 5, profile: 'uniform', minResampleMs: 100, maxResampleMs: 200, seed: 'continuous' });
+  assert.equal(scheduler.refill(), true); assert.equal(scheduler.text, 'block-0'); scheduler.index = scheduler.text.length; assert.equal(scheduler.refill(), true); assert.equal(scheduler.text, 'block-1');
 });

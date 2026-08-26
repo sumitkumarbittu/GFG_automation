@@ -45,12 +45,18 @@
       this.run = { state: lab.STATES.IDLE, runId: lab.makeRunId(), config, counts: { completed: 0, skipped: 0, failed: 0 }, queueIndex: 0, startedAt: Date.now(), lastAction: 'Start requested' };
       await this.setState(lab.STATES.STARTING); await this.setState(lab.STATES.RESOLVING, { lastAction: 'Resolving ordered catalog' });
       try {
-        const catalog = await this.resolver.resolve(config.endPosition);
-        if (catalog.length < config.endPosition) throw new Error(`Catalog contains only ${catalog.length} positions; requested ${config.endPosition}`);
-        const all = lab.positions(config.lastCompleted, config.endPosition).map(position => ({ position, problem: catalog[position - 1] }));
+        let all, source;
+        if (config.traversalMode === 'urls') {
+          const problems = lab.parseProblemUrls(config.urlList); all = problems.map((problem, index) => ({ position: index + 1, problem })); source = 'user-url-list';
+        } else {
+          const catalog = await this.resolver.resolve(config.endPosition);
+          if (catalog.length < config.endPosition) throw new Error(`Catalog contains only ${catalog.length} positions; requested ${config.endPosition}`);
+          all = lab.positions(config.lastCompleted, config.endPosition).map(position => ({ position, problem: catalog[position - 1] })); source = 'locked-explore-snapshot';
+        }
         const skipped = config.skipRestricted ? all.filter(x => !x.problem || x.problem.premium || x.problem.available === false).length : 0;
         const queue = config.skipRestricted ? all.filter(x => x.problem && !x.problem.premium && x.problem.available !== false) : all;
-        this.run = { ...this.run, queue, counts: { ...this.run.counts, skipped }, totalRequested: all.length };
+        const queueFingerprint = lab.hashText(queue.map(x => `${x.position}:${x.problem.slug}`).join('\n'));
+        this.run = { ...this.run, queue, queueSource: source, queueFingerprint, retryCount: 0, counts: { ...this.run.counts, skipped }, totalRequested: all.length };
         if (!queue.length) return this.setState(lab.STATES.COMPLETED, { lastAction: 'No eligible problems in range' });
         await this.save(); await this.navigateCurrent();
       } catch (error) { await this.fail(error.message, false); throw error; }
@@ -91,6 +97,7 @@
       await this.setState(lab.STATES.RUNNING, { language: details.language, editorType: details.editorType, recoverableError: null, lastAction: 'Synthetic editor simulation running' });
       await this.chrome.alarms.create(DWELL_ALARM, { when: this.run.dwellDeadline });
     }
+    async contentPhase(phase) { if (this.run.state !== lab.STATES.WAITING_FOR_EDITOR) return; this.run = { ...this.run, lastAction: String(phase || 'Preparing editor'), updatedAt: Date.now() }; await this.save(); await this.broadcast(); }
     async pause(reason = 'Paused by user') {
       if (![lab.STATES.RUNNING, lab.STATES.WAITING_FOR_EDITOR, lab.STATES.NAVIGATING, lab.STATES.RETRYING, lab.STATES.CLEANING].includes(this.run.state)) return;
       await this.chrome.alarms.clear(DWELL_ALARM); await this.chrome.alarms.clear(NAV_ALARM);
@@ -122,7 +129,7 @@
       if (action === 'remove') return this.setState(lab.STATES.PAUSED, { recoverableError: null, lastAction: 'Generated block removed and verified' });
       if (action === 'retry') { await this.setState(lab.STATES.NAVIGATING, { dwellDeadline: null, lastAction: 'Retrying current problem' }); return this.navigateCurrent(); }
       this.run.counts[action === 'skip' ? 'skipped' : 'completed']++;
-      this.run.queueIndex++; this.run.dwellDeadline = null; await this.setState(lab.STATES.RESOLVING, { lastAction: action === 'skip' ? 'Problem skipped after cleanup' : 'Problem completed after cleanup' }); await this.navigateCurrent();
+      this.run.queueIndex++; this.run.retryCount = 0; this.run.dwellDeadline = null; await this.setState(lab.STATES.RESOLVING, { lastAction: action === 'skip' ? 'Problem skipped after cleanup' : 'Problem completed after cleanup' }); await this.navigateCurrent();
     }
     async retry() { return this.requestCleanup('retry'); }
     async repairRecovery() {
@@ -134,7 +141,23 @@
       await this.setState(lab.STATES.RETRYING, { recoverableError: null, dwellDeadline: null, lastAction: 'Stale recovery journal quarantined' }); await this.navigateCurrent(true);
     }
     async stop() { await this.chrome.alarms.clear(DWELL_ALARM); await this.chrome.alarms.clear(NAV_ALARM); try { await this.chrome.tabs.sendMessage(this.run.tabId, { type: 'STOP' }); } catch {} await this.setState(lab.STATES.STOPPED, { dwellDeadline: null, lastAction: 'Run stopped; editor content preserved' }); }
-    async fail(reason, recoverable = true) { this.run.counts = this.run.counts || { completed: 0, skipped: 0, failed: 0 }; this.run.counts.failed++; if (recoverable && this.run.state === lab.STATES.PAUSED) { this.run = { ...this.run, recoverableError: reason, updatedAt: Date.now(), lastAction: reason }; await this.save(); await this.broadcast(); } else if (recoverable && ![lab.STATES.IDLE, lab.STATES.ERROR].includes(this.run.state)) await this.pause(reason); else { this.run = { ...this.run, state: lab.STATES.ERROR, recoverableError: reason, updatedAt: Date.now(), lastAction: reason }; await this.save(); await this.broadcast(); } }
+    async fail(reason, recoverable = true) {
+      this.run.counts = this.run.counts || { completed: 0, skipped: 0, failed: 0 }; this.run.counts.failed++;
+      const hard = /CAPTCHA|verification|Authentication|Closed automation tab|recovery-journal mismatch/i.test(reason);
+      if (recoverable && !hard && this.run.config?.autoRetry && ![lab.STATES.IDLE, lab.STATES.ERROR, lab.STATES.CLEANING].includes(this.run.state)) {
+        const retryCount = (this.run.retryCount || 0) + 1, exhausted = retryCount > this.run.config.maxRetries;
+        this.run.retryCount = retryCount; await this.save();
+        if (!exhausted || this.run.config.autoSkip) {
+          const action = exhausted ? 'skip' : 'retry';
+          await this.requestCleanup(action, false);
+          this.run.lastAction = exhausted ? `Retries exhausted; automatically skipping (${reason})` : `Automatic retry ${retryCount}/${this.run.config.maxRetries} (${reason})`;
+          await this.save(); await this.broadcast(); return;
+        }
+      }
+      if (recoverable && this.run.state === lab.STATES.PAUSED) { this.run = { ...this.run, recoverableError: reason, updatedAt: Date.now(), lastAction: reason }; await this.save(); await this.broadcast(); }
+      else if (recoverable && ![lab.STATES.IDLE, lab.STATES.ERROR].includes(this.run.state)) await this.pause(reason);
+      else { this.run = { ...this.run, state: lab.STATES.ERROR, recoverableError: reason, updatedAt: Date.now(), lastAction: reason }; await this.save(); await this.broadcast(); }
+    }
     async appendTelemetry(record) { const data = await this.chrome.storage.local.get(TELEMETRY_KEY), rows = data[TELEMETRY_KEY] || []; rows.push(record); await this.chrome.storage.local.set({ [TELEMETRY_KEY]: rows }); }
     async telemetry() { return (await this.chrome.storage.local.get(TELEMETRY_KEY))[TELEMETRY_KEY] || []; }
   }

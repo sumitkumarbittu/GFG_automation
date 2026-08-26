@@ -1,26 +1,41 @@
 <!doctype html>
-<html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Traversal Lab</title><link rel="stylesheet" href="sidepanel.css"></head>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Traversal Lab</title><link rel="stylesheet" href="sidepanel.css"></head>
 <body>
-  <header><div class="mark">G</div><div><h1>Traversal Lab</h1><p>GeeksforGeeks synthetic editor simulator</p></div><span class="label">SYNTHETIC</span></header>
+  <header><div class="eyebrow">DEVELOPMENT TOOL</div><div class="brand"><div class="mark">G</div><div><h1>Traversal Lab</h1><p>GeeksforGeeks synthetic editor simulator</p></div></div><span class="label">SYNTHETIC</span></header>
   <main>
     <section class="status-card">
-      <div class="status-top"><span id="state" class="state">IDLE</span><span id="position">No active problem</span></div>
-      <h2 id="title">Ready</h2><a id="problem-link" hidden target="_blank"></a>
+      <div class="status-top"><span id="state" class="state">IDLE</span><span id="runtime-aid">Wake lock: off</span></div>
+      <div class="problem-row"><strong id="position">No active problem</strong><span id="queue-source">No queue</span></div>
+      <h2 id="title">Ready</h2><a id="problem-link" hidden target="_blank"></a><code id="fingerprint" hidden></code>
       <div class="progress"><i id="progress-bar"></i></div>
-      <div class="metrics"><div><b id="remaining-time">00:00</b><span>remaining</span></div><div><b id="completed">0</b><span>completed</span></div><div><b id="skipped">0</b><span>skipped</span></div><div><b id="failed">0</b><span>failed</span></div><div><b id="remaining">0</b><span>left</span></div><div><b id="cps">0</b><span>target CPS</span></div></div>
+      <div class="metrics"><div><b id="remaining-time">00:00</b><span>remaining</span></div><div><b id="completed">0</b><span>done</span></div><div><b id="skipped">0</b><span>skipped</span></div><div><b id="failed">0</b><span>failures</span></div><div><b id="remaining">0</b><span>left</span></div><div><b id="cps">0</b><span>target CPS</span></div></div>
       <p id="last-action" class="last-action">Configure a run below.</p><p id="error" class="error" hidden></p>
     </section>
 
     <form id="config">
-      <fieldset><legend>Question range</legend><div class="grid three"><label>Last completed<input name="lastCompleted" type="number" min="0" value="0" required></label><label>End position<input name="endPosition" type="number" min="1" value="1" required></label><label>Minutes each<input name="minutesPerQuestion" type="number" min="0.1" max="1440" step="0.1" value="5" required></label></div><label class="check"><input name="skipRestricted" type="checkbox" checked> Skip premium or unavailable questions</label></fieldset>
-      <fieldset><legend>Variable speed</legend><div class="grid two"><label>Minimum CPS<input name="minCps" type="number" min="1" max="1000" value="40"></label><label>Maximum CPS<input name="maxCps" type="number" min="1" max="1000" value="150"></label><label>Profile<select name="speedProfile"><option value="uniform">Uniform</option><option value="triangular">Triangular</option><option value="bursty">Bursty</option><option value="seeded">Seeded replay</option></select></label><label>Resample (ms)<input name="resampleMs" type="number" min="100" max="60000" value="500"></label></div><label>Optional replay seed<input name="replaySeed" type="text" placeholder="run-42"></label></fieldset>
-      <fieldset><legend>Simulated pointer</legend><label class="check"><input name="pointerEnabled" type="checkbox"> Enable editor pointer overlay</label><div class="grid two"><label>Movement interval (ms)<input name="pointerIntervalMs" type="number" min="250" max="30000" value="2000"></label><label>Accuracy (%)<input name="pointerAccuracy" type="number" min="0" max="100" value="85"></label></div></fieldset>
-      <fieldset><legend>Editor</legend><label class="check"><input name="editorEnabled" type="checkbox" checked> Enable editor interaction</label><label class="check confirm"><input name="editorConfirmed" type="checkbox"> I explicitly confirm this run may modify the active editor</label><div class="grid two"><label>Page editor language<select name="pageLanguage"><option value="cpp">C++</option><option value="java">Java</option><option value="python">Python</option><option value="javascript">JavaScript</option><option value="auto">Keep current</option></select></label><label>Fallback language<select name="fallbackLanguage"><option value="cpp">C++</option><option value="java">Java</option><option value="python">Python</option><option value="javascript">JavaScript</option><option value="typescript">TypeScript</option></select></label></div><label class="check"><input name="pauseWhenHidden" type="checkbox" checked> Pause token accumulation while page is hidden</label></fieldset>
+      <fieldset><legend><i>01</i> Locked question queue</legend>
+        <label>Queue source<select name="traversalMode"><option value="catalog">Explore snapshot</option><option value="urls">Exact URL list</option></select></label>
+        <div id="catalog-fields" class="grid two"><label>Last completed position<input name="lastCompleted" type="number" min="0" value="0" required></label><label>End position<input name="endPosition" type="number" min="1" value="10" required></label></div>
+        <label id="url-fields" hidden>GFG problem URLs<textarea name="urlList" rows="5" placeholder="https://www.geeksforgeeks.org/problems/factorial5739/1"></textarea></label>
+        <p class="hint">The exact slug order is frozen when the run starts.</p><label class="check"><input name="skipRestricted" type="checkbox" checked> Skip premium or unavailable questions</label>
+      </fieldset>
+      <fieldset><legend><i>02</i> Timing and stochastic typing</legend>
+        <label>Minutes per question<input name="minutesPerQuestion" type="number" min="0.1" max="1440" step="0.1" value="5"></label>
+        <div class="grid two"><label>Minimum CPS<input name="minCps" type="number" min="1" max="1000" value="1"></label><label>Maximum CPS<input name="maxCps" type="number" min="1" max="1000" value="50"></label><label>Min speed change (ms)<input name="minResampleMs" type="number" min="100" value="250"></label><label>Max speed change (ms)<input name="maxResampleMs" type="number" min="100" value="1500"></label><label>Min chunk<input name="minChunkSize" type="number" min="1" value="1"></label><label>Max chunk<input name="maxChunkSize" type="number" min="1" value="24"></label></div>
+        <div class="grid two"><label>Profile<select name="speedProfile"><option value="uniform">Uniform</option><option value="triangular">Triangular</option><option value="bursty">Bursty</option><option value="seeded">Seeded uniform</option></select></label><label>Replay seed<input name="replaySeed" placeholder="blank = run ID"></label><label>Pause probability<input name="pauseProbability" type="number" min="0" max="1" step="0.01" value="0.04"></label><label>Pause range (ms)<span class="inline"><input aria-label="Minimum pause" name="minPauseMs" type="number" min="0" value="80"><input aria-label="Maximum pause" name="maxPauseMs" type="number" min="0" value="900"></span></label></div>
+      </fieldset>
+      <fieldset><legend><i>03</i> Pointer simulation</legend>
+        <label class="check"><input name="pointerEnabled" type="checkbox" checked> Show synthetic pointer overlay</label>
+        <div class="grid two"><label>Min interval (ms)<input name="minPointerIntervalMs" type="number" min="250" value="250"></label><label>Max interval (ms)<input name="maxPointerIntervalMs" type="number" min="250" value="3000"></label><label>Target scope<select name="pointerScope"><option value="viewport">Website viewport</option><option value="editor">Editor only</option></select></label><label>Caret bias (%)<input name="pointerAccuracy" type="number" min="0" max="100" value="35"></label></div>
+      </fieldset>
+      <fieldset><legend><i>04</i> Recovery and editor</legend>
+        <div class="checks"><label class="check"><input name="autoRetry" type="checkbox" checked> Retry recoverable failures automatically</label><label class="check"><input name="autoSkip" type="checkbox" checked> Skip after retries are exhausted</label><label class="check"><input name="focusMode" type="checkbox" checked> Maximize the native GFG editor pane</label><label class="check"><input name="keepAwake" type="checkbox" checked> Keep the display awake while active</label><label class="check"><input name="pauseWhenHidden" type="checkbox"> Pause typing when the tab is hidden</label></div>
+        <label>Automatic retries per question<input name="maxRetries" type="number" min="0" max="100" value="5"></label>
+        <div class="grid two"><label>Page language<select name="pageLanguage"><option value="cpp">C++</option><option value="java">Java</option><option value="python">Python</option><option value="javascript">JavaScript</option><option value="auto">Keep current</option></select></label><label>Fallback language<select name="fallbackLanguage"><option value="cpp">C++</option><option value="java">Java</option><option value="python">Python</option><option value="javascript">JavaScript</option><option value="typescript">TypeScript</option></select></label></div>
+        <label class="check"><input name="editorEnabled" type="checkbox" checked> Enable editor interaction</label><label class="check confirm"><input name="editorConfirmed" type="checkbox"> I understand and allow temporary editor changes</label>
+      </fieldset>
     </form>
-
-    <section class="actions"><button id="start" class="primary">Start</button><button id="pause">Pause</button><button id="resume">Resume</button><button id="retry">Retry current</button><button id="skip">Skip current</button><button id="remove">Remove generated block</button><button id="repair">Repair recovery mismatch</button><button id="stop" class="danger">Stop</button><button id="export">Export labeled telemetry</button></section>
-    <p class="safety">This extension never invokes Run, Compile, Test, or Submit. The pointer is a visual DOM overlay. Its dispatched events are synthetic and <code>isTrusted === false</code>.</p>
-  </main>
-  <script src="../shared/validation.js"></script><script src="sidepanel.js"></script>
+    <section class="actions"><button id="start" class="primary">Start traversal</button><button id="pause">Pause</button><button id="resume">Resume</button><button id="retry">Retry</button><button id="skip">Skip</button><button id="remove">Restore editor</button><button id="repair">Repair recovery</button><button id="stop" class="danger">Stop</button><button id="export" class="wide">Export labeled telemetry</button></section>
+    <p class="safety">No Run, Compile, Test, or Submit action is invoked. Pointer events are synthetic and <code>isTrusted === false</code>. Telemetry is labeled <code>synthetic</code>.</p>
+  </main><script src="../shared/validation.js"></script><script src="sidepanel.js"></script>
 </body></html>
