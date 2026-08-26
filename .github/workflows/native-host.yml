@@ -1,0 +1,41 @@
+name: Native host builds
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'native-host/**'
+      - '.github/workflows/native-host.yml'
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - os: macos-13
+            artifact: macos-intel
+            target: x86_64-apple-darwin
+            binary: native-host/target/x86_64-apple-darwin/release/gfg-traversal-native-host
+          - os: macos-14
+            artifact: macos-apple-silicon
+            target: aarch64-apple-darwin
+            binary: native-host/target/aarch64-apple-darwin/release/gfg-traversal-native-host
+          - os: windows-latest
+            artifact: windows-x64
+            target: x86_64-pc-windows-msvc
+            binary: native-host/target/x86_64-pc-windows-msvc/release/gfg-traversal-native-host.exe
+          - os: windows-latest
+            artifact: windows-arm64
+            target: aarch64-pc-windows-msvc
+            binary: native-host/target/aarch64-pc-windows-msvc/release/gfg-traversal-native-host.exe
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - run: cargo build --release --locked --target ${{ matrix.target }} --manifest-path native-host/Cargo.toml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gfg-traversal-native-host-${{ matrix.artifact }}
+          path: ${{ matrix.binary }}

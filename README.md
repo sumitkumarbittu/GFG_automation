@@ -2,7 +2,7 @@
 
 GeeksforGeeks Traversal Lab is a Chrome Manifest V3 side-panel extension for user-controlled, labeled synthetic editor simulation. It traverses an ordered range from the public GeeksforGeeks practice catalog, inserts a non-solution local code sequence inside the detected solution function, holds the page for the configured dwell time, removes only its generated range, verifies the cleanup, and then navigates.
 
-Version 1.2 freezes exact problem slugs into a run queue, continuously produces diverse collision-safe code blocks for the entire dwell period, supports exact URL queues, automatically retries recoverable failures, and can skip after a configured retry limit. It adds independently sampled typing and pointer controls, editor-focus mode, and the Screen Wake Lock API. Every random stream can be reproduced with a replay seed and remains labeled synthetic.
+Version 1.3 adds an optional cross-platform native companion for OS-level keyboard events and real pointer movement on macOS and Windows. Browser-synthetic mode remains the default. Native mode still represents automated activity and remains labeled synthetic in telemetry. Version 1.2 froze exact problem slugs into a run queue, continuously produced diverse collision-safe code blocks for the dwell period, and added retries, pointer controls, editor-focus mode, and display wake lock.
 
 It never clicks or invokes Run, Compile, Test, or Submit. It does not solve the active problem and does not bypass login, CAPTCHA, verification, premium access, rate limits, or other restrictions.
 
@@ -20,12 +20,38 @@ It never clicks or invokes Run, Compile, Test, or Submit. It does not solve the 
 
 After changing extension files, click **Reload** on the extension card in `chrome://extensions`. Reload any open GeeksforGeeks tab so that Chrome injects the updated content scripts.
 
+## Optional OS input companion
+
+OS input mode requires a separately installed Native Messaging host. The extension cannot generate operating-system input by itself. The host accepts only four commands: capability check, type text, move pointer, and stop. It has no click command.
+
+Install Rust from [rustup.rs](https://rustup.rs), note the 32-character extension ID shown on the unpacked extension card, and run the installer for the current platform.
+
+macOS:
+
+```sh
+./native-host/installers/install-macos.sh EXTENSION_ID
+```
+
+Restart Chrome and click **Check native companion**. macOS requests Accessibility access if it is missing. If the prompt does not appear, add `~/Library/Application Support/GFGTraversalLab/gfg-traversal-native-host` manually in **System Settings → Privacy & Security → Accessibility**, then restart Chrome.
+
+Windows PowerShell:
+
+```powershell
+.\native-host\installers\install-windows.ps1 -ExtensionId EXTENSION_ID
+```
+
+Restart Chrome after installation. The Windows host uses the current-user Native Messaging registry key and does not require administrator access. It cannot send input to an elevated application from a normal Chrome process.
+
+Choose **OS keyboard and pointer** in the side panel and use **Check native companion** before starting. Because clicking Start or Resume gives focus to Chrome's side panel, native mode pauses with a focus instruction. Click once inside the GFG editor and the run resumes automatically. Native mode types one character per verified transaction. Pointer movement follows smooth intermediate positions and defaults to one destination per second. It never clicks. The run pauses again if browser focus leaves the editor or user input is detected outside an issued native operation.
+
+Uninstall with `uninstall-macos.sh` or `uninstall-windows.ps1`. On macOS, remove the Accessibility permission separately if desired.
+
 If upgrading from version 1.0 while a duplicate block is visible, reload the extension and the GFG tab, then use **Remove generated block** on the current run. Version 1.1 deletes the currently journaled range and any strongly identified older generated blocks, verifies the resulting editor source, and only then advances. If it cannot prove the ranges belong to Traversal Lab, it pauses and preserves the editor.
 
 ## Operation
 
 1. Choose **Explore snapshot** or **Exact URL list**. Explore positions are resolved once at Start and their exact slugs are frozen for the run. The first position is exclusive and the end is inclusive. URL-list positions are local queue positions, not permanent GFG IDs.
-2. Configure dwell time, speed behavior, optional pointer overlay, and fallback language.
+2. Choose browser-synthetic or OS input, then configure dwell time, speed behavior, optional pointer movement, and fallback language.
 3. Choose **Page editor language** to make the extension select C++, Java, Python, or JavaScript on the actual GFG editor before typing. Choose **Keep current** for detection-only behavior. The fallback applies when a supported editor does not expose a language identifier.
 4. If editor interaction is enabled, check the explicit confirmation box. A run cannot start without it.
 5. Click **Start**. The extension stores a fingerprinted slug queue and continuously generates blocks until each dwell deadline. Code families include primitive types, arrays, vectors, maps, sets, queues, stacks, nested loops, while loops, searches, and local transformations.
@@ -42,7 +68,7 @@ The editor planner masks comments and strings before brace-aware detection in C+
 
 Generated snippets contain only local, language-correct scaffolding unrelated to the problem statement. Natural identifiers are collision checked against the existing source. The extension adds no visible tracking comments. It tracks generated text, source context, insertion position, recovery anchors, and timestamps in `chrome.storage.local`.
 
-The visual pointer cannot move the operating-system pointer. It can target either the editor or the website viewport and emits `mousemove` and `pointermove` DOM events. Destinations and intervals use independent seedable samples. Those events are synthetic, so `event.isTrusted === false`.
+In browser-synthetic mode, the visual pointer cannot move the operating-system pointer. It emits untrusted `mousemove` and `pointermove` DOM events. In OS input mode, the native companion moves the real pointer using macOS `CGEvent` or Windows `SendInput`. Neither mode clicks. Destinations and intervals use independent seedable samples.
 
 Editor-focus mode leaves GFG's native header, profile controls, editor toolbar, and editor DOM in place. It reversibly collapses the overlapping problem pane and expands the existing editor through the available page area. It does not add a replacement editor or fabricated website header. Display-awake mode requests a screen wake lock, reacquires it after visibility changes, and reports when the browser or operating system refuses it.
 
@@ -81,7 +107,7 @@ Authentication and verification pages are detected and paused. The extension wil
 
 ## Telemetry
 
-Completed JSONL records include the synthetic label, run/problem identity, URL, language, start/finish timestamps, CPS configuration and samples, actual inserted characters per elapsed interval, seed, total characters, normalized pointer coordinates, pause/resume events, cleanup result, and failure reason. Telemetry stays in `chrome.storage.local` until the user clears extension storage. Export does not transmit it to a server.
+Completed JSONL records include the synthetic label, input mode, run/problem identity, URL, language, start/finish timestamps, CPS configuration and samples, actual inserted characters per elapsed interval, seed, total characters, normalized pointer coordinates, pause/resume events, cleanup result, and failure reason. Telemetry stays in `chrome.storage.local` until the user clears extension storage. Export does not transmit it to a server.
 
 ## Tests
 
@@ -90,6 +116,7 @@ The project has no runtime dependencies and uses Node's built-in test runner.
 ```sh
 npm test
 npm run check
+cargo check --manifest-path native-host/Cargo.toml
 ```
 
 The suite covers range semantics, validation, sampling bounds and replay, pointer clamping, catalog parsing/order/filtering/cache behavior, five-language insertion, Python docstrings, identifier collisions, outside edits, exact/refused/forced/recovery cleanup, caret placement, legacy cleanup, manifest resources and permissions, and static safety checks against full-model clearing or execution-control clicks.
@@ -105,4 +132,5 @@ src/
   shared/       state/range utilities and validation
   sidepanel/    side-panel interface
 test/           Node test suite
+native-host/    Rust Native Messaging host, platform backends, and installers
 ```

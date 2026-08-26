@@ -13,6 +13,11 @@ test('pointer interval and accuracy validation', () => {
   assert.throws(() => validateConfig({ ...DEFAULTS, endPosition: 2, pointerIntervalMs: 249 }), /Pointer interval/);
   assert.throws(() => validateConfig({ ...DEFAULTS, endPosition: 2, pointerAccuracy: 101 }), /Pointer accuracy/);
 });
+test('native input mode and movement duration validation', () => {
+  assert.equal(validateConfig({ ...DEFAULTS, inputMode: 'native', nativeMoveDurationMs: 420 }).inputMode, 'native');
+  assert.throws(() => validateConfig({ ...DEFAULTS, inputMode: 'physical' }), /input mode/i);
+  assert.throws(() => validateConfig({ ...DEFAULTS, nativeMoveDurationMs: 1000 }), /movement duration/i);
+});
 test('URL queues normalize and deduplicate exact GFG problem slugs', () => {
   const rows = parseProblemUrls('https://www.geeksforgeeks.org/problems/factorial5739/1\nhttps://practice.geeksforgeeks.org/problems/factorial5739/1 https://www.geeksforgeeks.org/problems/lcm-and-gcd4516/1');
   assert.deepEqual(rows.map(row => row.slug), ['factorial5739', 'lcm-and-gcd4516']);

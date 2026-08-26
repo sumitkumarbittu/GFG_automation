@@ -5,6 +5,32 @@
   let active = null;
   const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
   const send = message => chrome.runtime.sendMessage(message).catch(() => null);
+  async function nativeCommand(command) {
+    if (document.visibilityState !== 'visible') throw new Error('Native input paused because the GFG tab is hidden');
+    const result = await chrome.runtime.sendMessage({ type: 'NATIVE_COMMAND', command });
+    if (result?.error) throw new Error(result.error);
+    if (!result) throw new Error('Native companion did not respond');
+    return result;
+  }
+  function detectUserActivity(event) {
+    if (!active || active.config?.inputMode !== 'native' || active.paused || active.userPauseRequested || !event.isTrusted) return;
+    const expected = event.type === 'keydown' ? active.nativeTyping : event.type === 'mousemove' ? active.nativePointerMoving : false;
+    if (expected) return;
+    active.userPauseRequested = true; send({ type: 'USER_ACTIVITY' });
+  }
+  document.addEventListener('keydown', detectUserActivity, true);
+  document.addEventListener('mousemove', detectUserActivity, true);
+  document.addEventListener('mousedown', detectUserActivity, true);
+  document.addEventListener('pointerdown', detectUserActivity, true);
+  document.addEventListener('focusin', event => {
+    if (!active?.waitingForNativeFocus || !active.editorElement?.contains(event.target) || !document.hasFocus()) return;
+    active.waitingForNativeFocus = false; send({ type: 'NATIVE_FOCUS_READY' });
+  }, true);
+  function requireNativeEditorFocus() {
+    if (!active || active.config?.inputMode !== 'native' || active.waitingForNativeFocus) return;
+    active.paused = true; active.waitingForNativeFocus = true; active.scheduler?.pause(); active.pointer?.stop(); send({ type: 'NATIVE_FOCUS_REQUIRED' });
+  }
+  window.addEventListener('blur', () => { if (active && !active.paused && active.config?.inputMode === 'native') requireNativeEditorFocus(); });
   function pageFailure() {
     const text = `${document.title}\n${document.body?.innerText?.slice(0, 10000) || ''}`;
     if (/captcha|verify you are human|cloudflare/i.test(text)) return 'CAPTCHA or verification page';
@@ -59,7 +85,7 @@
     return after;
   }
   function baseTelemetry(message, language) {
-    return { label: 'synthetic', runId: message.runId, problemId: message.problem.id, problemUrl: message.problem.url, language, startTimestamp: new Date().toISOString(), finishTimestamp: null, configuredMinCps: message.config.minCps, configuredMaxCps: message.config.maxCps, speedProfile: message.config.speedProfile, speedChangeIntervalRange: [message.config.minResampleMs, message.config.maxResampleMs], replaySeed: message.config.replaySeed || null, charactersPerElapsedSecond: [], targetCpsSamples: [], generatedBlocks: [], totalCharacters: 0, pointerMovementIntervalRange: [message.config.minPointerIntervalMs, message.config.maxPointerIntervalMs], pointerAccuracy: message.config.pointerAccuracy, pointerScope: message.config.pointerScope, normalizedPointerCoordinates: [], pauseResumeEvents: [], wakeLockStates: [], cleanupResult: null, failureReason: null };
+    return { label: 'synthetic', inputMode: message.config.inputMode || 'synthetic', runId: message.runId, problemId: message.problem.id, problemUrl: message.problem.url, language, startTimestamp: new Date().toISOString(), finishTimestamp: null, configuredMinCps: message.config.minCps, configuredMaxCps: message.config.maxCps, speedProfile: message.config.speedProfile, speedChangeIntervalRange: [message.config.minResampleMs, message.config.maxResampleMs], replaySeed: message.config.replaySeed || null, charactersPerElapsedSecond: [], targetCpsSamples: [], generatedBlocks: [], totalCharacters: 0, pointerMovementIntervalRange: [message.config.minPointerIntervalMs, message.config.maxPointerIntervalMs], pointerAccuracy: message.config.pointerAccuracy, pointerScope: message.config.pointerScope, normalizedPointerCoordinates: [], pauseResumeEvents: [], wakeLockStates: [], cleanupResult: null, failureReason: null };
   }
   async function startProblem(message) {
     if (active) await stopLocal(false);
@@ -86,19 +112,38 @@
       active.journalTimer = setInterval(persistJournal, 2000);
       const seed = message.config.replaySeed || `${message.runId}:${message.problem.id}`, random = lab.seededRandom(seed + ':pointer');
       const problemContext = visibleProblemContext(); active.telemetry.contextKind = lab.contextKind(problemContext);
-      active.scheduler = new lab.TypingScheduler({ nextText: block => { const raw = lab.generateContextSnippet(language, detected.source, message.position * 97 + block * 17, problemContext); return lab.insertGenerated('', { index: 0, indent: plan.indent }, raw).generated; }, write: async chunk => { const result = await active.bridge.insert(chunk); active.generated = result.text; active.telemetry.totalCharacters = active.generated.length; }, minCps: message.config.minCps, maxCps: message.config.maxCps, profile: message.config.speedProfile, minResampleMs: message.config.minResampleMs, maxResampleMs: message.config.maxResampleMs, minChunkSize: message.config.minChunkSize, maxChunkSize: message.config.maxChunkSize, pauseProbability: message.config.pauseProbability, minPauseMs: message.config.minPauseMs, maxPauseMs: message.config.maxPauseMs, seed, pauseWhenHidden: message.config.pauseWhenHidden, onSample: sample => { active.telemetry.targetCpsSamples.push(sample); send({ type: 'TARGET_CPS', cps: sample.cps }); }, onSecond: row => active.telemetry.charactersPerElapsedSecond.push(row), onBlock: row => active.telemetry.generatedBlocks.push(row), onError: error => { active.pointer?.stop(); send({ type: 'CONTENT_ERROR', reason: `Editor write failed: ${error.message}` }); } });
-      const element = editorElement(detected.type); if (message.config.focusMode) { active.focusMode = new lab.EditorFocusMode(element); active.focusMode.start(); }
+      const nativeMode = message.config.inputMode === 'native';
+      const write = nativeMode ? async chunk => {
+        if (!document.hasFocus()) { active.nativeDeferredChunk = chunk; requireNativeEditorFocus(); return; }
+        if (active.nativeAutoConsumed?.startsWith(chunk)) { active.nativeAutoConsumed = active.nativeAutoConsumed.slice(chunk.length); return; }
+        if (active.nativeAutoConsumed) active.nativeAutoConsumed = '';
+        const prepared = await active.bridge.prepareNative(chunk);
+        active.nativeTyping = true;
+        let commandError = null;
+        try { await nativeCommand(prepared.operation === 'advance' ? { action: 'type', key: 'ArrowRight' } : { action: 'type', text: chunk }); }
+        catch (error) { commandError = error; }
+        finally { if (active) active.nativeTyping = false; }
+        if (commandError && prepared.operation === 'advance') { await active.bridge.cancelNative().catch(() => {}); throw commandError; }
+        let result;
+        try { result = await active.bridge.commitNative(chunk); }
+        catch (verificationError) { await active.bridge.cancelNative().catch(() => {}); throw new Error(commandError ? `${commandError.message}; ${verificationError.message}` : verificationError.message); }
+        active.nativeAutoConsumed = result.autoConsumed || ''; active.generated = result.text; active.telemetry.totalCharacters = active.generated.length;
+        if (result.unexpected) throw new Error(commandError ? `${commandError.message}; native editor transformed the typed character unexpectedly` : 'Native editor transformed the typed character unexpectedly');
+      } : async chunk => { const result = await active.bridge.insert(chunk); active.generated = result.text; active.telemetry.totalCharacters = active.generated.length; }; active.nativeWrite = nativeMode ? write : null;
+      active.scheduler = new lab.TypingScheduler({ nextText: block => { const raw = lab.generateContextSnippet(language, detected.source, message.position * 97 + block * 17, problemContext); return lab.insertGenerated('', { index: 0, indent: plan.indent }, raw).generated; }, write, minCps: message.config.minCps, maxCps: message.config.maxCps, profile: message.config.speedProfile, minResampleMs: message.config.minResampleMs, maxResampleMs: message.config.maxResampleMs, minChunkSize: nativeMode ? 1 : message.config.minChunkSize, maxChunkSize: nativeMode ? 1 : message.config.maxChunkSize, pauseProbability: message.config.pauseProbability, minPauseMs: message.config.minPauseMs, maxPauseMs: message.config.maxPauseMs, seed, pauseWhenHidden: nativeMode || message.config.pauseWhenHidden, onSample: sample => { active.telemetry.targetCpsSamples.push(sample); send({ type: 'TARGET_CPS', cps: sample.cps }); }, onSecond: row => active.telemetry.charactersPerElapsedSecond.push(row), onBlock: row => active.telemetry.generatedBlocks.push(row), onError: error => { active.pointer?.stop(); nativeCommand({ action: 'stop' }).catch(() => {}); send({ type: 'CONTENT_ERROR', reason: `Editor write failed: ${error.message}` }); } });
+      const element = editorElement(detected.type); active.editorElement = element; if (message.config.focusMode) { active.focusMode = new lab.EditorFocusMode(element); active.focusMode.start(); }
       if (message.config.keepAwake) await active.wakeLock.acquire();
-      if (message.config.pointerEnabled) { active.pointer = new lab.PointerSimulator({ editorElement: element, minIntervalMs: message.config.minPointerIntervalMs, maxIntervalMs: message.config.maxPointerIntervalMs, accuracy: message.config.pointerAccuracy, scope: message.config.pointerScope, random, onMove: p => active.telemetry.normalizedPointerCoordinates.push(p) }); active.pointer.start(); }
-      active.scheduler.start();
+      if (message.config.pointerEnabled) active.pointer = new lab.PointerSimulator({ editorElement: element, minIntervalMs: message.config.minPointerIntervalMs, maxIntervalMs: message.config.maxPointerIntervalMs, accuracy: message.config.pointerAccuracy, scope: message.config.pointerScope, random, nativeDurationMs: message.config.nativeMoveDurationMs, nativeMove: nativeMode ? async p => { active.nativePointerMoving = true; try { return await nativeCommand({ action: 'move', x: p.x, y: p.y, durationMs: p.durationMs, steps: Math.max(2, Math.round(p.durationMs / 16)) }); } catch (error) { send({ type: 'CONTENT_ERROR', reason: `Native pointer failed: ${error.message}` }); throw error; } finally { if (active) active.nativePointerMoving = false; } } : null, onMove: p => active.telemetry.normalizedPointerCoordinates.push(p) });
       await send({ type: 'CONTENT_RUNNING', details: { language, editorType: detected.type } });
+      if (nativeMode && !document.hasFocus()) { requireNativeEditorFocus(); return; }
+      active.pointer?.start(); active.scheduler.start();
     } catch (error) { if (active?.telemetry) active.telemetry.failureReason = error.message; active?.pointer?.stop(); active?.scheduler?.pause(); await send({ type: 'CONTENT_ERROR', reason: error.message }); }
   }
-  async function pauseLocal() { if (!active) return; active.paused = true; active.scheduler?.pause(); active.pointer?.stop(); active.telemetry?.pauseResumeEvents.push({ type: 'pause', at: Date.now() }); await persistJournal(); }
-  async function resumeLocal() { if (!active) return; active.paused = false; active.scheduler?.resume(); if (active.config.pointerEnabled && active.pointer) active.pointer.start(); active.telemetry?.pauseResumeEvents.push({ type: 'resume', at: Date.now() }); }
+  async function pauseLocal() { if (!active) return; active.paused = true; active.scheduler?.pause(); active.pointer?.stop(); if (active.config.inputMode === 'native') await nativeCommand({ action: 'stop' }).catch(() => {}); active.telemetry?.pauseResumeEvents.push({ type: 'pause', at: Date.now() }); await persistJournal(); }
+  async function resumeLocal() { if (!active) return; if (active.config.inputMode === 'native' && !document.hasFocus()) { requireNativeEditorFocus(); return; } active.paused = false; active.waitingForNativeFocus = false; active.userPauseRequested = false; if (active.nativeDeferredChunk) { const chunk = active.nativeDeferredChunk; active.nativeDeferredChunk = ''; await active.nativeWrite(chunk); } active.scheduler?.resume(); if (active.config.pointerEnabled && active.pointer) active.pointer.start(); active.telemetry?.pauseResumeEvents.push({ type: 'resume', at: Date.now() }); }
   async function cleanup(force) {
     if (!active) throw new Error('No live editor session');
-    active.pointer?.stop(); if (active.journalTimer) clearInterval(active.journalTimer); await active.scheduler?.stop(); await persistJournal();
+    active.pointer?.stop(); if (active.config.inputMode === 'native') await nativeCommand({ action: 'stop' }).catch(() => {}); if (active.journalTimer) clearInterval(active.journalTimer); await active.scheduler?.stop(); await persistJournal();
     try {
       if (active.config.editorEnabled && !active.begun) {
         let detected = await detectEditor(active.bridge); detected = await recoverPrevious(active.bridge, detected, active.runId, active.problem); await removeKnownRemnants(active.bridge, detected);
@@ -134,7 +179,7 @@
       await chrome.storage.local.remove(JOURNAL_KEY); active = null; await send({ type: 'CLEANUP_DONE', result: { ok: true } });
     } catch (error) { active = null; await send({ type: 'CLEANUP_DONE', result: { ok: false, reason: error.message } }); }
   }
-  async function stopLocal(notify = true) { if (!active) return; active.pointer?.stop(); active.scheduler?.pause(); if (active.journalTimer) clearInterval(active.journalTimer); await persistJournal(); active.focusMode?.stop(); await active.wakeLock?.release(); active.stopped = true; if (notify) active = null; }
+  async function stopLocal(notify = true) { if (!active) return; active.pointer?.stop(); active.scheduler?.pause(); if (active.config.inputMode === 'native') await nativeCommand({ action: 'stop' }).catch(() => {}); if (active.journalTimer) clearInterval(active.journalTimer); await persistJournal(); active.focusMode?.stop(); await active.wakeLock?.release(); active.stopped = true; if (notify) active = null; }
   chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (message.type === 'PING_ACTIVE') { respond({ active: Boolean(active && !active.stopped), runId: active?.runId, problemId: active?.problem?.id, generatedLength: active?.generated?.length || 0 }); return false; }
     const work = message.type === 'START_PROBLEM' ? startProblem(message) : message.type === 'PAUSE' ? pauseLocal() : message.type === 'RESUME' ? resumeLocal() : message.type === 'CLEANUP' ? (active ? cleanup(Boolean(message.force)) : cleanupDetached(message)) : message.type === 'STOP' ? stopLocal() : Promise.resolve();

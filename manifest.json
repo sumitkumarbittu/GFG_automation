@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "GeeksforGeeks Traversal Lab",
-  "version": "1.2.2",
+  "version": "1.3.1",
   "description": "User-controlled labeled synthetic editor simulation for development and ML testing.",
   "minimum_chrome_version": "114",
-  "permissions": ["alarms", "sidePanel", "storage", "tabs"],
+  "permissions": ["alarms", "nativeMessaging", "sidePanel", "storage", "tabs"],
   "host_permissions": [
     "https://www.geeksforgeeks.org/*",
     "https://practice.geeksforgeeks.org/*"

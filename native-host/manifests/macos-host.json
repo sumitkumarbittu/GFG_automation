@@ -1,0 +1,8 @@
+{
+  "name": "com.gfg.traversal_lab",
+  "description": "GFG Traversal Lab OS input companion",
+  "path": "/ABSOLUTE/PATH/TO/gfg-traversal-native-host",
+  "type": "stdio",
+  "allowed_origins": ["chrome-extension://EXTENSION_ID/"]
+}
+
