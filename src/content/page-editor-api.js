@@ -109,38 +109,12 @@
       let value;
       if (method === 'setLanguage') value = setPageLanguage(args.language);
       else if (method === 'detect') value = { type: adapter.type, source: adapter.source(), language: adapter.language(), rect: adapter.rect().toJSON?.() || adapter.rect() };
-      else if (method === 'begin') { sessions.set(args.sessionId, { start: args.position, text: '', caretOffset: 0, autoCloserOffsets: [], pendingNative: null }); value = true; }
-      else if (method === 'adopt') { sessions.set(args.sessionId, { start: args.position, text: args.text, caretOffset: args.text.length, autoCloserOffsets: [], pendingNative: null }); value = true; }
+      else if (method === 'begin') { sessions.set(args.sessionId, { start: args.position, text: '' }); value = true; }
+      else if (method === 'adopt') { sessions.set(args.sessionId, { start: args.position, text: args.text }); value = true; }
       else if (method === 'removeRange') { const before = adapter.source(), expected = before.slice(0, args.start) + before.slice(args.end); await adapter.remove(args.start, args.end); const after = adapter.source(); if (after !== expected) throw new Error('Editor refused the requested range deletion'); adapter.caret(args.start); value = true; }
       else {
         const session = sessions.get(args.sessionId); if (!session) throw new Error('Missing editor session');
         if (method === 'insert') { const before = adapter.source(), start = locate(session, before), position = start + session.text.length, expected = before.slice(0, position) + args.text + before.slice(position); await adapter.insert(position, args.text); const after = adapter.source(); if (after !== expected) throw new Error('Editor write verification failed'); session.text += args.text; adapter.caret(position + args.text.length); value = { start, end: start + session.text.length, text: session.text }; }
-        else if (method === 'prepareNative') {
-          const before = adapter.source(), start = locate(session, before), text = String(args.text || ''), offset = session.caretOffset ?? session.text.length, position = start + offset;
-          if (session.pendingNative) throw new Error('A native editor write is already pending');
-          const closer = text.length === 1 && session.autoCloserOffsets.includes(offset) && before[position] === text;
-          session.pendingNative = { before, start, position, offset, text, operation: closer ? 'advance' : 'insert' }; adapter.caret(position); value = { start, position, operation: session.pendingNative.operation };
-        }
-        else if (method === 'commitNative') {
-          const pending = session.pendingNative; session.pendingNative = null; if (!pending || pending.text !== String(args.text || '')) throw new Error('Native editor write transaction mismatch'); const after = adapter.source();
-          if (pending.operation === 'advance') {
-            if (after !== pending.before) throw new Error('Native closer navigation changed editor text');
-            session.autoCloserOffsets = session.autoCloserOffsets.filter(offset => offset !== pending.offset); session.caretOffset = pending.offset + 1;
-            adapter.caret(session.start + session.caretOffset); value = { start: session.start, end: session.start + session.text.length, text: session.text, autoConsumed: '' };
-          } else {
-            const insertedLength = after.length - pending.before.length;
-            if (insertedLength < pending.text.length || after.slice(0, pending.position) !== pending.before.slice(0, pending.position) || after.slice(pending.position + insertedLength) !== pending.before.slice(pending.position)) throw new Error('Native editor write verification failed');
-            const inserted = after.slice(pending.position, pending.position + insertedLength), pairs = { '(': ')', '[': ']', '{': '}', '"': '"', "'": "'" }, paired = pending.text.length === 1 && inserted === pending.text + pairs[pending.text];
-            const autoIndent = pending.text.endsWith('\n') && /^[\t ]*$/.test(inserted.slice(pending.text.length));
-            const unexpected = !inserted.startsWith(pending.text) || (inserted !== pending.text && !paired && !autoIndent);
-            session.start = pending.start; session.autoCloserOffsets = session.autoCloserOffsets.map(offset => offset >= pending.offset ? offset + inserted.length : offset);
-            session.text = session.text.slice(0, pending.offset) + inserted + session.text.slice(pending.offset);
-            if (paired) { session.caretOffset = pending.offset + pending.text.length; session.autoCloserOffsets.push(session.caretOffset); }
-            else session.caretOffset = pending.offset + inserted.length;
-            adapter.caret(session.start + session.caretOffset); value = { start: session.start, end: session.start + session.text.length, text: session.text, autoConsumed: autoIndent ? inserted.slice(pending.text.length) : '', unexpected };
-          }
-        }
-        else if (method === 'cancelNative') { session.pendingNative = null; value = true; }
         else if (method === 'inspect') { const source = adapter.source(); let start = session.start; try { start = locate(session, source); } catch {} value = { source, start, end: start + session.text.length, current: source.slice(start, start + session.text.length) }; }
         else if (method === 'remove') { const source = adapter.source(), start = locate(session, source); if (!args.force && source.slice(start, start + session.text.length) !== session.text) throw new Error('External modification inside generated range'); const expected = source.slice(0, start) + source.slice(start + session.text.length); await adapter.remove(start, start + session.text.length); if (adapter.source() !== expected) throw new Error('Editor refused generated-range cleanup'); adapter.caret(start); sessions.delete(args.sessionId); value = true; }
         else if (method === 'caret') { adapter.caret(session.start + session.text.length); value = true; }

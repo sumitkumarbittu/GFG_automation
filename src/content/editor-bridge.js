@@ -33,9 +33,6 @@
     async begin(position, sessionId) { this.sessionId = sessionId; this.generated = ''; return this.transport.call('begin', { position, sessionId }); }
     async adopt(position, text, sessionId) { this.sessionId = sessionId; this.generated = text; return this.transport.call('adopt', { position, text, sessionId }); }
     async insert(text) { const result = await this.transport.call('insert', { sessionId: this.sessionId, text }); this.generated += text; return result; }
-    prepareNative(text) { return this.transport.call('prepareNative', { sessionId: this.sessionId, text }); }
-    async commitNative(text) { const result = await this.transport.call('commitNative', { sessionId: this.sessionId, text }); this.generated = result.text; return result; }
-    cancelNative() { return this.transport.call('cancelNative', { sessionId: this.sessionId }); }
     inspect() { return this.transport.call('inspect', { sessionId: this.sessionId }); }
     remove(force = false) { return this.transport.call('remove', { sessionId: this.sessionId, force }); }
     removeRange(start, end) { return this.transport.call('removeRange', { start, end }); }

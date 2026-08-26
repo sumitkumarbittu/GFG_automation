@@ -8,8 +8,7 @@
     lastCompleted: 0, endPosition: 1, minutesPerQuestion: 5, skipRestricted: true,
     minCps: 40, maxCps: 150, speedProfile: 'uniform', minResampleMs: 250, maxResampleMs: 1500, resampleMs: 500, replaySeed: '',
     minChunkSize: 1, maxChunkSize: 24, pauseProbability: 0.04, minPauseMs: 80, maxPauseMs: 900,
-    pointerEnabled: false, minPointerIntervalMs: 1000, maxPointerIntervalMs: 1000, pointerIntervalMs: 1000, pointerAccuracy: 85, pointerScope: 'viewport',
-    inputMode: 'synthetic', nativeMoveDurationMs: 420,
+    pointerEnabled: false, minPointerIntervalMs: 250, maxPointerIntervalMs: 3000, pointerIntervalMs: 2000, pointerAccuracy: 85, pointerScope: 'viewport',
     editorEnabled: true, editorConfirmed: false, pageLanguage: 'cpp', fallbackLanguage: 'cpp', pauseWhenHidden: true,
     autoRetry: true, maxRetries: 5, autoSkip: true, focusMode: true, keepAwake: true
   });
@@ -41,9 +40,6 @@
     c.pointerAccuracy = finite(c.pointerAccuracy, 'Pointer accuracy');
     if (c.pointerAccuracy < 0 || c.pointerAccuracy > 100) throw new RangeError('Pointer accuracy must be 0 to 100');
     if (!PROFILES.has(c.speedProfile)) throw new RangeError('Unknown speed profile');
-    if (!new Set(['synthetic', 'native']).has(c.inputMode)) throw new RangeError('Unknown input mode');
-    c.nativeMoveDurationMs = finite(c.nativeMoveDurationMs, 'Native pointer movement duration');
-    if (c.nativeMoveDurationMs < 50 || c.nativeMoveDurationMs > 950) throw new RangeError('Native pointer movement duration must be 50 to 950 ms');
     if (!new Set(['editor', 'viewport']).has(c.pointerScope)) throw new RangeError('Unknown pointer scope');
     if (!LANGUAGES.has(c.fallbackLanguage)) throw new RangeError('Unsupported fallback language');
     if (!new Set(['auto', 'cpp', 'java', 'python', 'javascript']).has(c.pageLanguage)) throw new RangeError('Unsupported page language');
