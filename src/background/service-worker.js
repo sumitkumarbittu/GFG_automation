@@ -1,0 +1,41 @@
+importScripts('../shared/core.js', '../shared/validation.js', 'catalog-resolver.js', 'run-controller.js');
+const controller = new TraversalLab.RunController();
+const ready = controller.init();
+
+chrome.action.onClicked.addListener(tab => chrome.sidePanel.open({ tabId: tab.id }).catch(() => {}));
+chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  (async () => {
+    await ready;
+    switch (message.type) {
+      case 'GET_STATUS': return controller.status();
+      case 'START': await controller.start(message.config); return controller.status();
+      case 'PAUSE_RUN': await controller.pause(); return controller.status();
+      case 'RESUME_RUN': await controller.resume(); return controller.status();
+      case 'RETRY': await controller.retry(); return controller.status();
+      case 'SKIP': await controller.requestCleanup('skip'); return controller.status();
+      case 'REMOVE': await controller.requestCleanup('remove', Boolean(message.force)); return controller.status();
+      case 'REPAIR_RECOVERY': await controller.repairRecovery(); return controller.status();
+      case 'STOP_RUN': await controller.stop(); return controller.status();
+      case 'GET_TELEMETRY': return controller.telemetry();
+      case 'PAGE_READY': await controller.pageReady(sender.tab?.id, message.page); return { ok: true };
+      case 'CONTENT_RUNNING': await controller.contentRunning(message.details); return { ok: true };
+      case 'CONTENT_ERROR': await controller.fail(message.reason, true); return { ok: true };
+      case 'CLEANUP_DONE': await controller.cleanupDone(message.result); return { ok: true };
+      case 'TARGET_CPS': controller.run.currentTargetCps = message.cps; await controller.save(); await controller.broadcast(); return { ok: true };
+      default: return { ok: false, error: 'Unknown message' };
+    }
+  })().then(sendResponse).catch(error => sendResponse({ error: error.message }));
+  return true;
+});
+chrome.alarms.onAlarm.addListener(alarm => ready.then(() => {
+  if (alarm.name === TraversalLab.DWELL_ALARM) return controller.requestCleanup('advance');
+  if (alarm.name === TraversalLab.NAV_ALARM) return controller.fail('Navigation timeout', true);
+}));
+chrome.tabs.onRemoved.addListener(tabId => ready.then(() => { if (tabId === controller.run.tabId && !TraversalLab.TERMINAL_STATES.has(controller.run.state)) controller.fail('Closed automation tab', true); }));
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => ready.then(() => {
+  if (tabId !== controller.run.tabId || !changeInfo.url || !['RUNNING', 'WAITING_FOR_EDITOR', 'CLEANING'].includes(controller.run.state)) return;
+  const slug = controller.current()?.problem?.slug;
+  if (slug && !changeInfo.url.includes(`/problems/${slug}`)) controller.fail('Unexpected navigation before verified cleanup', true);
+}));

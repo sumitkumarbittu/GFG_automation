@@ -1,0 +1,46 @@
+{
+  "manifest_version": 3,
+  "name": "GeeksforGeeks Traversal Lab",
+  "version": "1.1.0",
+  "description": "User-controlled labeled synthetic editor simulation for development and ML testing.",
+  "minimum_chrome_version": "114",
+  "permissions": ["alarms", "sidePanel", "storage", "tabs"],
+  "host_permissions": [
+    "https://www.geeksforgeeks.org/*",
+    "https://practice.geeksforgeeks.org/*"
+  ],
+  "background": {
+    "service_worker": "src/background/service-worker.js"
+  },
+  "side_panel": {
+    "default_path": "src/sidepanel/sidepanel.html"
+  },
+  "action": {
+    "default_title": "Open GeeksforGeeks Traversal Lab"
+  },
+  "content_scripts": [{
+    "matches": [
+      "https://www.geeksforgeeks.org/*",
+      "https://practice.geeksforgeeks.org/*"
+    ],
+    "js": [
+      "src/shared/core.js",
+      "src/shared/validation.js",
+      "src/content/editor-planner.js",
+      "src/content/snippet-generator.js",
+      "src/content/editor-bridge.js",
+      "src/content/typing-scheduler.js",
+      "src/content/pointer-simulator.js",
+      "src/content/gfg-adapter.js"
+    ],
+    "run_at": "document_idle"
+  }, {
+    "matches": [
+      "https://www.geeksforgeeks.org/*",
+      "https://practice.geeksforgeeks.org/*"
+    ],
+    "js": ["src/content/page-editor-api.js"],
+    "run_at": "document_start",
+    "world": "MAIN"
+  }]
+}
